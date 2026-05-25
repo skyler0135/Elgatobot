@@ -106,8 +106,8 @@ function buildWelcomeEmbed({ config, guild, user, member }) {
         })
         .setTitle(config.welcomeEmbed?.title || '🔥 EL PAPITO T’ACCUEILLE DANS LE CARTEL 🔥')
         .setDescription(message)
-        .setThumbnail(avatarURL) // photo de profil en grand à droite
-        .setImage(characterImage) // bannière El Papito en bas
+        .setThumbnail(avatarURL)
+        .setImage(characterImage)
         .addFields(
             {
                 name: '🎭 Nouveau Soldado',
@@ -190,7 +190,7 @@ export default {
                 .addIntegerOption(option =>
                     option
                         .setName('delete_after')
-                        .setDescription('Supprimer le message après X secondes. 0 = jamais')
+                        .setDescription('Supprimer le message après X secondes. 0 = jamais (défaut)')
                         .setMinValue(0)
                         .setMaxValue(600)
                         .setRequired(false)
@@ -295,7 +295,7 @@ export default {
                 const message = options.getString('message') || DEFAULT_WELCOME_MESSAGE;
                 const image = options.getString('image') || DEFAULT_EL_PAPITO_IMAGE;
                 const ping = options.getBoolean('ping') ?? true;
-                const deleteAfter = options.getInteger('delete_after') ?? 60;
+                const deleteAfter = options.getInteger('delete_after') ?? 0; // 👈 0 = message permanent
 
                 if (!isValidUrl(image)) {
                     return InteractionHelper.safeEditReply(interaction, {
@@ -338,7 +338,7 @@ export default {
                     content:
                         `✅ Welcome configuré dans ${channel}\n` +
                         `🕒 Suppression automatique : ${
-                            deleteAfter > 0 ? `${deleteAfter} secondes` : 'désactivée'
+                            deleteAfter > 0 ? `${deleteAfter} secondes` : '**désactivée (message permanent)**'
                         }\n\n` +
                         `👀 Aperçu :`,
                     embeds: [previewEmbed]
@@ -375,7 +375,7 @@ export default {
                     welcomeImage: finalImage,
                     characterImage: finalImage,
                     welcomePing: ping ?? currentConfig.welcomePing ?? true,
-                    autoDeleteSeconds: deleteAfter ?? currentConfig.autoDeleteSeconds ?? 60,
+                    autoDeleteSeconds: deleteAfter ?? currentConfig.autoDeleteSeconds ?? 0, // 👈 0 par défaut
                     welcomeEmbed: {
                         ...(currentConfig.welcomeEmbed || {}),
                         title:
@@ -489,7 +489,7 @@ export default {
                         successEmbed(
                             `Test envoyé dans ${channel}.\n` +
                             `Suppression automatique : ${
-                                deleteAfter > 0 ? `${deleteAfter} secondes` : 'désactivée'
+                                deleteAfter > 0 ? `${deleteAfter} secondes` : 'désactivée (permanent)'
                             }`
                         )
                     ]
@@ -523,7 +523,7 @@ export default {
                             value:
                                 Number(config.autoDeleteSeconds || 0) > 0
                                     ? `${config.autoDeleteSeconds} secondes`
-                                    : 'Désactivée',
+                                    : 'Désactivée (message permanent)',
                             inline: true
                         },
                         {
@@ -567,5 +567,4 @@ export default {
         }
     }
 };
-
 

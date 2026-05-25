@@ -1,149 +1,535 @@
 import { getColor } from '../../config/bot.js';
-import { SlashCommandBuilder, PermissionFlagsBits, ChannelType, EmbedBuilder, MessageFlags } from 'discord.js';
-import { errorEmbed } from '../../utils/embeds.js';
+import {
+    SlashCommandBuilder,
+    PermissionFlagsBits,
+    ChannelType,
+    EmbedBuilder,
+    MessageFlags
+} from 'discord.js';
+import { errorEmbed, successEmbed, createEmbed } from '../../utils/embeds.js';
 import { getWelcomeConfig, updateWelcomeConfig } from '../../utils/database.js';
-import { formatWelcomeMessage } from '../../utils/welcome.js';
 import { logger } from '../../utils/logger.js';
 import { InteractionHelper } from '../../utils/interactionHelper.js';
+
+const DEFAULT_EL_PAPITO_IMAGE =
+    'https://cdn.discordapp.com/attachments/1508548945041948762/1508549958050119842/elpapito.png?ex=6a15f221&is=6a14a0a1&hm=feb01b6d0d22950682f8533afb8813a983acf01ec0db2c99f7402c13c3808079';
+
+const DEFAULT_WELCOME_MESSAGE =
+    'Bienvenue {user} dans **{server}** 🌵\n\n' +
+    'El Papito t’a remarqué, **{firstname}**.\n' +
+    'Tu es le **{memberCount}ème** membre de la familia.\n\n' +
+    'Lis le règlement, présente-toi et prends ta place à la table.';
+
+function isValidUrl(url) {
+    if (!url) return true;
+
+    try {
+        const parsed = new URL(url);
+        return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+    } catch {
+        return false;
+    }
+}
+
+function getDisplayName(member, user) {
+    return (
+        member?.displayName ||
+        user?.globalName ||
+        user?.username ||
+        'Nouveau membre'
+    );
+}
+
+function getFirstName(member, user) {
+    const displayName = getDisplayName(member, user);
+    return displayName.split(' ')[0] || displayName;
+}
+
+function formatMessage(message, { user, guild, member }) {
+    const displayName = getDisplayName(member, user);
+    const firstName = getFirstName(member, user);
+
+    return String(message || DEFAULT_WELCOME_MESSAGE)
+        .replaceAll('{user}', user?.toString?.() || 'Utilisateur')
+        .replaceAll('{user.mention}', user?.toString?.() || 'Utilisateur')
+        .replaceAll('{username}', user?.username || displayName)
+        .replaceAll('{user.username}', user?.username || displayName)
+        .replaceAll('{user.tag}', user?.tag || user?.username || displayName)
+        .replaceAll('{firstname}', firstName)
+        .replaceAll('{firstName}', firstName)
+        .replaceAll('{displayName}', displayName)
+        .replaceAll('{server}', guild?.name || 'Serveur')
+        .replaceAll('{server.name}', guild?.name || 'Serveur')
+        .replaceAll('{guild.name}', guild?.name || 'Serveur')
+        .replaceAll('{memberCount}', String(guild?.memberCount || 0))
+        .replaceAll('{membercount}', String(guild?.memberCount || 0));
+}
+
+function buildWelcomeEmbed({ config, guild, user, member }) {
+    const firstName = getFirstName(member, user);
+    const displayName = getDisplayName(member, user);
+
+    const message = formatMessage(config.welcomeMessage || DEFAULT_WELCOME_MESSAGE, {
+        user,
+        guild,
+        member
+    });
+
+    const characterImage =
+        config.welcomeImage ||
+        config.characterImage ||
+        config.welcomeEmbed?.image?.url ||
+        DEFAULT_EL_PAPITO_IMAGE;
+
+    const embed = new EmbedBuilder()
+        .setColor(config.welcomeEmbed?.color || getColor('success'))
+        .setAuthor({
+            name: `Bienvenue ${firstName} 🌵`,
+            iconURL: user.displayAvatarURL({ size: 256 })
+        })
+        .setTitle(config.welcomeEmbed?.title || '🌵 EL PAPITO T’ACCUEILLE DANS LA FAMILIA')
+        .setDescription(message)
+        .setThumbnail(user.displayAvatarURL({ size: 256 }))
+        .setImage(characterImage)
+        .addFields(
+            {
+                name: '👤 Nouveau membre',
+                value: `${displayName}`,
+                inline: true
+            },
+            {
+                name: '👥 Membres',
+                value: `${guild.memberCount}`,
+                inline: true
+            },
+            {
+                name: '🏠 Serveur',
+                value: `${guild.name}`,
+                inline: true
+            }
+        )
+        .setTimestamp()
+        .setFooter({
+            text: config.welcomeEmbed?.footer || 'EL GATO • La familia veille'
+        });
+
+    return embed;
+}
 
 export default {
     data: new SlashCommandBuilder()
         .setName('welcome')
-        .setDescription('Configure the welcome system')
+        .setDescription('Configurer le système de bienvenue')
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+
         .addSubcommand(subcommand =>
             subcommand
                 .setName('setup')
-                .setDescription('Set up the welcome message')
+                .setDescription('Installer le welcome dans un salon')
                 .addChannelOption(option =>
-                    option.setName('channel')
-                        .setDescription('The channel to send welcome messages to')
+                    option
+                        .setName('channel')
+                        .setDescription('Salon où envoyer le message welcome')
                         .addChannelTypes(ChannelType.GuildText)
-                        .setRequired(true))
+                        .setRequired(true)
+                )
                 .addStringOption(option =>
-                    option.setName('message')
-                        .setDescription('Welcome message. Variables: {user}, {username}, {server}, {memberCount}')
-                        .setRequired(true))
+                    option
+                        .setName('message')
+                        .setDescription('Message welcome avec {user}, {firstname}, {server}, {memberCount}')
+                        .setRequired(false)
+                )
                 .addStringOption(option =>
-                    option.setName('image')
-                        .setDescription('URL of the image to include in the welcome message')
-                        .setRequired(false))
+                    option
+                        .setName('image')
+                        .setDescription('Image de ton personnage El Papito')
+                        .setRequired(false)
+                )
                 .addBooleanOption(option =>
-                    option.setName('ping')
-                        .setDescription('Whether to ping the user in the welcome message')
-                        .setRequired(false))),
+                    option
+                        .setName('ping')
+                        .setDescription('Ping le nouveau membre ?')
+                        .setRequired(false)
+                )
+                .addIntegerOption(option =>
+                    option
+                        .setName('delete_after')
+                        .setDescription('Supprimer le message après X secondes. 0 = jamais')
+                        .setMinValue(0)
+                        .setMaxValue(600)
+                        .setRequired(false)
+                )
+        )
+
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('config')
+                .setDescription('Modifier le welcome')
+                .addChannelOption(option =>
+                    option
+                        .setName('channel')
+                        .setDescription('Changer le salon welcome')
+                        .addChannelTypes(ChannelType.GuildText)
+                        .setRequired(false)
+                )
+                .addStringOption(option =>
+                    option
+                        .setName('message')
+                        .setDescription('Changer le message welcome')
+                        .setRequired(false)
+                )
+                .addStringOption(option =>
+                    option
+                        .setName('image')
+                        .setDescription('Changer l’image du personnage')
+                        .setRequired(false)
+                )
+                .addBooleanOption(option =>
+                    option
+                        .setName('ping')
+                        .setDescription('Activer/désactiver le ping')
+                        .setRequired(false)
+                )
+                .addIntegerOption(option =>
+                    option
+                        .setName('delete_after')
+                        .setDescription('Supprimer après X secondes. 0 = jamais')
+                        .setMinValue(0)
+                        .setMaxValue(600)
+                        .setRequired(false)
+                )
+        )
+
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('look')
+                .setDescription('Voir un aperçu du message welcome')
+        )
+
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('test')
+                .setDescription('Envoyer un test dans le salon welcome')
+        )
+
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('status')
+                .setDescription('Voir la configuration actuelle')
+        )
+
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('disable')
+                .setDescription('Désactiver le welcome')
+        ),
 
     async execute(interaction) {
-        try {
-            const deferSuccess = await InteractionHelper.safeDefer(interaction);
-            if (!deferSuccess) {
-                logger.warn(`Welcome interaction defer failed`, {
-                    userId: interaction.user.id,
-                    guildId: interaction.guildId,
-                    commandName: 'welcome'
-                });
-                return;
-            }
-        } catch (deferError) {
-            logger.error(`Welcome defer error`, { error: deferError.message });
+        const deferSuccess = await InteractionHelper.safeDefer(interaction, {
+            flags: MessageFlags.Ephemeral
+        });
+
+        if (!deferSuccess) {
+            logger.warn('Welcome interaction defer failed', {
+                userId: interaction.user.id,
+                guildId: interaction.guildId,
+                commandName: 'welcome'
+            });
             return;
         }
 
-        const { options, guild, client } = interaction;
+        const { options, guild, client, user, member } = interaction;
 
         if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
-            return await InteractionHelper.safeEditReply(interaction, {
-                embeds: [errorEmbed('Missing Permissions', 'You need the **Manage Server** permission to use `/welcome`.')],
-                flags: MessageFlags.Ephemeral
+            return InteractionHelper.safeEditReply(interaction, {
+                embeds: [
+                    errorEmbed(
+                        'Permission manquante',
+                        'Tu dois avoir la permission **Gérer le serveur** pour utiliser cette commande.'
+                    )
+                ]
             });
         }
 
         const subcommand = options.getSubcommand();
 
-        if (subcommand === 'setup') {
-            const channel = options.getChannel('channel');
-            const message = options.getString('message');
-            const image = options.getString('image');
-            const ping = options.getBoolean('ping') ?? false;
+        try {
+            if (subcommand === 'setup') {
+                const channel = options.getChannel('channel');
+                const message = options.getString('message') || DEFAULT_WELCOME_MESSAGE;
+                const image = options.getString('image') || DEFAULT_EL_PAPITO_IMAGE;
+                const ping = options.getBoolean('ping') ?? true;
+                const deleteAfter = options.getInteger('delete_after') ?? 60;
 
-            const existingConfig = await getWelcomeConfig(client, guild.id);
-            if (existingConfig?.channelId) {
-                logger.info(`[Welcome] Setup blocked because config already exists in channel ${existingConfig.channelId} for guild ${guild.id}`);
-                return await InteractionHelper.safeEditReply(interaction, {
-                    embeds: [errorEmbed(
-                        'Welcome Setup Already Exists',
-                        `Welcome is already configured for <#${existingConfig.channelId}>. Use **/welcome config** to customize channel, message, ping, or image.`
-                    )],
-                    flags: MessageFlags.Ephemeral
-                });
-            }
-            
-            if (!message || message.trim().length === 0) {
-                logger.warn(`[Welcome] Empty message provided by ${interaction.user.tag} in ${guild.name}`);
-                return await InteractionHelper.safeEditReply(interaction, {
-                    embeds: [errorEmbed('Invalid Input', 'Welcome message cannot be empty')],
-                    flags: MessageFlags.Ephemeral
-                });
-            }
-
-            
-            if (image) {
-                try {
-                    new URL(image);
-                } catch (e) {
-                    logger.warn(`[Welcome] Invalid image URL provided by ${interaction.user.tag}: ${image}`);
-                    return await InteractionHelper.safeEditReply(interaction, {
-                        embeds: [errorEmbed('Invalid Image URL', 'Please provide a valid image URL (must start with http:// or https://')],
-                        flags: MessageFlags.Ephemeral
+                if (!isValidUrl(image)) {
+                    return InteractionHelper.safeEditReply(interaction, {
+                        embeds: [
+                            errorEmbed(
+                                'Image invalide',
+                                'L’URL de l’image doit commencer par `http://` ou `https://`.'
+                            )
+                        ]
                     });
                 }
-            }
 
-            try {
-                await updateWelcomeConfig(client, guild.id, {
+                const updatedConfig = await updateWelcomeConfig(client, guild.id, {
                     enabled: true,
                     channelId: channel.id,
                     welcomeMessage: message,
-                    welcomeImage: image || undefined,
-                    welcomePing: ping
+                    welcomeImage: image,
+                    characterImage: image,
+                    welcomePing: ping,
+                    autoDeleteSeconds: deleteAfter,
+                    welcomeEmbed: {
+                        title: '🌵 EL PAPITO T’ACCUEILLE DANS LA FAMILIA',
+                        description: message,
+                        color: getColor('success'),
+                        footer: 'EL GATO • La familia veille',
+                        image: {
+                            url: image
+                        }
+                    }
                 });
 
-                logger.info(`[Welcome] Setup configured by ${interaction.user.tag} for guild ${guild.name} (${guild.id})`);
-
-                const previewMessage = formatWelcomeMessage(message, {
-                    user: interaction.user,
-                    guild
+                const previewEmbed = buildWelcomeEmbed({
+                    config: updatedConfig,
+                    guild,
+                    user,
+                    member
                 });
 
-                const embed = new EmbedBuilder()
-                    .setColor(getColor('success'))
-                    .setTitle('✅ Welcome System Configured')
-                    .setDescription(`Welcome messages will now be sent to ${channel}`)
-                    .addFields(
-                        { name: 'Message Preview', value: previewMessage },
-                        { name: 'Ping User', value: ping ? '✅ Yes' : '❌ No' },
-                        { name: 'Status', value: '✅ Enabled' }
-                    )
-                    .setFooter({ text: 'Tip: Use /welcome config to customize welcome settings' });
-
-                if (image) {
-                    embed.setImage(image);
-                }
-
-                await InteractionHelper.safeEditReply(interaction, { embeds: [embed] });
-            } catch (error) {
-                logger.error(`[Welcome] Failed to setup welcome system for guild ${guild.id}:`, error);
-                await InteractionHelper.safeEditReply(interaction, {
-                    embeds: [errorEmbed(
-                        'Setup Failed',
-                        'An error occurred while configuring the welcome system. Please try again.',
-                        { showDetails: true }
-                    )],
-                    flags: MessageFlags.Ephemeral
+                return InteractionHelper.safeEditReply(interaction, {
+                    content:
+                        `✅ Welcome configuré dans ${channel}\n` +
+                        `🕒 Suppression automatique : ${
+                            deleteAfter > 0 ? `${deleteAfter} secondes` : 'désactivée'
+                        }\n\n` +
+                        `👀 Aperçu :`,
+                    embeds: [previewEmbed]
                 });
             }
+
+            if (subcommand === 'config') {
+                const currentConfig = await getWelcomeConfig(client, guild.id);
+
+                const channel = options.getChannel('channel');
+                const message = options.getString('message');
+                const image = options.getString('image');
+                const ping = options.getBoolean('ping');
+                const deleteAfter = options.getInteger('delete_after');
+
+                if (image && !isValidUrl(image)) {
+                    return InteractionHelper.safeEditReply(interaction, {
+                        embeds: [
+                            errorEmbed(
+                                'Image invalide',
+                                'L’URL de l’image doit commencer par `http://` ou `https://`.'
+                            )
+                        ]
+                    });
+                }
+
+                const finalMessage = message ?? currentConfig.welcomeMessage ?? DEFAULT_WELCOME_MESSAGE;
+                const finalImage = image ?? currentConfig.welcomeImage ?? DEFAULT_EL_PAPITO_IMAGE;
+
+                const updatedConfig = await updateWelcomeConfig(client, guild.id, {
+                    enabled: true,
+                    channelId: channel?.id ?? currentConfig.channelId,
+                    welcomeMessage: finalMessage,
+                    welcomeImage: finalImage,
+                    characterImage: finalImage,
+                    welcomePing: ping ?? currentConfig.welcomePing ?? true,
+                    autoDeleteSeconds: deleteAfter ?? currentConfig.autoDeleteSeconds ?? 60,
+                    welcomeEmbed: {
+                        ...(currentConfig.welcomeEmbed || {}),
+                        title:
+                            currentConfig.welcomeEmbed?.title ||
+                            '🌵 EL PAPITO T’ACCUEILLE DANS LA FAMILIA',
+                        description: finalMessage,
+                        color: currentConfig.welcomeEmbed?.color || getColor('success'),
+                        footer:
+                            currentConfig.welcomeEmbed?.footer ||
+                            'EL GATO • La familia veille',
+                        image: {
+                            url: finalImage
+                        }
+                    }
+                });
+
+                const previewEmbed = buildWelcomeEmbed({
+                    config: updatedConfig,
+                    guild,
+                    user,
+                    member
+                });
+
+                return InteractionHelper.safeEditReply(interaction, {
+                    content: '✅ Configuration welcome mise à jour.\n\n👀 Aperçu :',
+                    embeds: [previewEmbed]
+                });
+            }
+
+            if (subcommand === 'look') {
+                const config = await getWelcomeConfig(client, guild.id);
+
+                if (!config.enabled || !config.channelId) {
+                    return InteractionHelper.safeEditReply(interaction, {
+                        embeds: [
+                            errorEmbed(
+                                'Welcome non configuré',
+                                'Utilise d’abord `/welcome setup`.'
+                            )
+                        ]
+                    });
+                }
+
+                const previewEmbed = buildWelcomeEmbed({
+                    config,
+                    guild,
+                    user,
+                    member
+                });
+
+                return InteractionHelper.safeEditReply(interaction, {
+                    content: '👀 Aperçu éphémère du welcome :',
+                    embeds: [previewEmbed]
+                });
+            }
+
+            if (subcommand === 'test') {
+                const config = await getWelcomeConfig(client, guild.id);
+
+                if (!config.enabled || !config.channelId) {
+                    return InteractionHelper.safeEditReply(interaction, {
+                        embeds: [
+                            errorEmbed(
+                                'Welcome non configuré',
+                                'Utilise d’abord `/welcome setup`.'
+                            )
+                        ]
+                    });
+                }
+
+                const channel = guild.channels.cache.get(config.channelId);
+
+                if (!channel || !channel.isTextBased()) {
+                    return InteractionHelper.safeEditReply(interaction, {
+                        embeds: [
+                            errorEmbed(
+                                'Salon introuvable',
+                                'Le salon welcome configuré est introuvable ou invalide.'
+                            )
+                        ]
+                    });
+                }
+
+                const testEmbed = buildWelcomeEmbed({
+                    config,
+                    guild,
+                    user,
+                    member
+                });
+
+                const sentMessage = await channel.send({
+                    content: config.welcomePing ? `${user}` : null,
+                    allowedMentions: config.welcomePing ? { users: [user.id] } : { parse: [] },
+                    embeds: [testEmbed]
+                });
+
+                const deleteAfter = Number(config.autoDeleteSeconds || 0);
+
+                if (deleteAfter > 0) {
+                    setTimeout(async () => {
+                        try {
+                            await sentMessage.delete();
+                        } catch (error) {
+                            logger.debug('Impossible de supprimer le test welcome:', error);
+                        }
+                    }, deleteAfter * 1000);
+                }
+
+                return InteractionHelper.safeEditReply(interaction, {
+                    embeds: [
+                        successEmbed(
+                            `Test envoyé dans ${channel}.\n` +
+                            `Suppression automatique : ${
+                                deleteAfter > 0 ? `${deleteAfter} secondes` : 'désactivée'
+                            }`
+                        )
+                    ]
+                });
+            }
+
+            if (subcommand === 'status') {
+                const config = await getWelcomeConfig(client, guild.id);
+
+                const embed = createEmbed({
+                    title: '🌵 Configuration Welcome',
+                    color: config.enabled ? 'success' : 'error',
+                    fields: [
+                        {
+                            name: 'Statut',
+                            value: config.enabled ? '✅ Activé' : '❌ Désactivé',
+                            inline: true
+                        },
+                        {
+                            name: 'Salon',
+                            value: config.channelId ? `<#${config.channelId}>` : 'Non défini',
+                            inline: true
+                        },
+                        {
+                            name: 'Ping',
+                            value: config.welcomePing ? '✅ Oui' : '❌ Non',
+                            inline: true
+                        },
+                        {
+                            name: 'Suppression auto',
+                            value:
+                                Number(config.autoDeleteSeconds || 0) > 0
+                                    ? `${config.autoDeleteSeconds} secondes`
+                                    : 'Désactivée',
+                            inline: true
+                        },
+                        {
+                            name: 'Image personnage',
+                            value: config.welcomeImage || DEFAULT_EL_PAPITO_IMAGE
+                        },
+                        {
+                            name: 'Message',
+                            value: config.welcomeMessage || DEFAULT_WELCOME_MESSAGE
+                        }
+                    ]
+                });
+
+                return InteractionHelper.safeEditReply(interaction, {
+                    embeds: [embed]
+                });
+            }
+
+            if (subcommand === 'disable') {
+                await updateWelcomeConfig(client, guild.id, {
+                    enabled: false
+                });
+
+                return InteractionHelper.safeEditReply(interaction, {
+                    embeds: [
+                        successEmbed('Le système welcome est maintenant désactivé.')
+                    ]
+                });
+            }
+        } catch (error) {
+            logger.error('Welcome command error:', error);
+
+            return InteractionHelper.safeEditReply(interaction, {
+                embeds: [
+                    errorEmbed(
+                        'Erreur welcome',
+                        'Une erreur est arrivée pendant la configuration du welcome.'
+                    )
+                ]
+            });
         }
-    },
+    }
 };
 
 

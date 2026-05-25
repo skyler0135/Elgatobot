@@ -15,10 +15,18 @@ const DEFAULT_EL_PAPITO_IMAGE =
     'https://cdn.discordapp.com/attachments/1508548945041948762/1508549958050119842/elpapito.png?ex=6a15f221&is=6a14a0a1&hm=feb01b6d0d22950682f8533afb8813a983acf01ec0db2c99f7402c13c3808079';
 
 const DEFAULT_WELCOME_MESSAGE =
-    'Bienvenue {user} dans **{server}** 🌵\n\n' +
-    'El Papito t’a remarqué, **{firstname}**.\n' +
-    'Tu es le **{memberCount}ème** membre de la familia.\n\n' +
-    'Lis le règlement, présente-toi et prends ta place à la table.';
+    '╔═════════════════════════╗\n' +
+    '   🌵  **¡BIENVENIDO A LA FAMILIA!**  🌵\n' +
+    '╚═════════════════════════╝\n\n' +
+    '🔥 Hola **{firstname}**... *El Papito t’a vu franchir la frontera.* 🔥\n\n' +
+    '> *« Aquí, on ne fait pas que vivre... on règne. »*\n\n' +
+    '🎭 Tu es le **{memberCount}ème soldado** à rejoindre **{server}**.\n' +
+    '🌶️ Le sang est chaud, la tequila coule, et la familia veille sur les siens.\n\n' +
+    '📜 **Avant de prendre ta place à la table :**\n' +
+    '╰┈➤ 📖 Lis le règlement\n' +
+    '╰┈➤ 🎤 Présente-toi aux hermanos\n' +
+    '╰┈➤ 💼 Choisis ton camp dans la guerra\n\n' +
+    '🕯️ *El Patrón t’observe, {user}... Ne le déçois pas.* 🕯️';
 
 function isValidUrl(url) {
     if (!url) return true;
@@ -81,36 +89,64 @@ function buildWelcomeEmbed({ config, guild, user, member }) {
         config.welcomeEmbed?.image?.url ||
         DEFAULT_EL_PAPITO_IMAGE;
 
+    // Avatar HD du nouveau membre
+    const avatarURL = user.displayAvatarURL({ size: 512, extension: 'png', forceStatic: false });
+
+    // Date d'arrivée
+    const joinDate = `<t:${Math.floor(Date.now() / 1000)}:F>`;
+
+    // Ancienneté du compte
+    const accountCreated = `<t:${Math.floor(user.createdTimestamp / 1000)}:R>`;
+
     const embed = new EmbedBuilder()
-        .setColor(config.welcomeEmbed?.color || getColor('success'))
+        .setColor(config.welcomeEmbed?.color || 0x8B0000) // rouge sang cartel
         .setAuthor({
-            name: `Bienvenue ${firstName} 🌵`,
-            iconURL: user.displayAvatarURL({ size: 256 })
+            name: `🌵 ¡Hola ${displayName} ! Bienvenue dans la familia 🌵`,
+            iconURL: avatarURL
         })
-        .setTitle(config.welcomeEmbed?.title || '🌵 EL PAPITO T’ACCUEILLE DANS LA FAMILIA')
+        .setTitle(config.welcomeEmbed?.title || '🔥 EL PAPITO T’ACCUEILLE DANS LE CARTEL 🔥')
         .setDescription(message)
-        .setThumbnail(user.displayAvatarURL({ size: 256 }))
-        .setImage(characterImage)
+        .setThumbnail(avatarURL) // photo de profil en grand à droite
+        .setImage(characterImage) // bannière El Papito en bas
         .addFields(
             {
-                name: '👤 Nouveau membre',
-                value: `${displayName}`,
+                name: '🎭 Nouveau Soldado',
+                value: `\`\`\`${displayName}\`\`\``,
                 inline: true
             },
             {
-                name: '👥 Membres',
-                value: `${guild.memberCount}`,
+                name: '🔢 Numéro de la familia',
+                value: `\`\`\`#${guild.memberCount}\`\`\``,
                 inline: true
             },
             {
-                name: '🏠 Serveur',
-                value: `${guild.name}`,
+                name: '🏜️ Territorio',
+                value: `\`\`\`${guild.name}\`\`\``,
                 inline: true
+            },
+            {
+                name: '📅 Arrivée sur le territoire',
+                value: joinDate,
+                inline: false
+            },
+            {
+                name: '🕯️ Compte créé',
+                value: `Il y a ${accountCreated}`,
+                inline: false
+            },
+            {
+                name: '\u200B',
+                value:
+                    '╾━━━━━━━━━━━━━━╼\n' +
+                    '🌶️ *« La sangre llama a la sangre. »* 🌶️\n' +
+                    '╾━━━━━━━━━━━━━━╼',
+                inline: false
             }
         )
         .setTimestamp()
         .setFooter({
-            text: config.welcomeEmbed?.footer || 'EL GATO • La familia veille'
+            text: config.welcomeEmbed?.footer || '🐈‍⬛ EL GATO • La familia veille sur les siens • Plata o plomo',
+            iconURL: guild.iconURL({ size: 128 }) || undefined
         });
 
     return embed;
@@ -281,10 +317,10 @@ export default {
                     welcomePing: ping,
                     autoDeleteSeconds: deleteAfter,
                     welcomeEmbed: {
-                        title: '🌵 EL PAPITO T’ACCUEILLE DANS LA FAMILIA',
+                        title: '🔥 EL PAPITO T’ACCUEILLE DANS LE CARTEL 🔥',
                         description: message,
-                        color: getColor('success'),
-                        footer: 'EL GATO • La familia veille',
+                        color: 0x8B0000,
+                        footer: '🐈‍⬛ EL GATO • La familia veille sur les siens • Plata o plomo',
                         image: {
                             url: image
                         }
@@ -344,12 +380,12 @@ export default {
                         ...(currentConfig.welcomeEmbed || {}),
                         title:
                             currentConfig.welcomeEmbed?.title ||
-                            '🌵 EL PAPITO T’ACCUEILLE DANS LA FAMILIA',
+                            '🔥 EL PAPITO T’ACCUEILLE DANS LE CARTEL 🔥',
                         description: finalMessage,
-                        color: currentConfig.welcomeEmbed?.color || getColor('success'),
+                        color: currentConfig.welcomeEmbed?.color || 0x8B0000,
                         footer:
                             currentConfig.welcomeEmbed?.footer ||
-                            'EL GATO • La familia veille',
+                            '🐈‍⬛ EL GATO • La familia veille sur les siens • Plata o plomo',
                         image: {
                             url: finalImage
                         }
